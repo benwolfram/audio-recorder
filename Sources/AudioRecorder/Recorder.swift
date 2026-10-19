@@ -97,10 +97,16 @@ final class Recorder: ObservableObject {
         let composition = AVMutableComposition()
         for url in inputs {
             let asset = AVURLAsset(url: url)
-            guard let source = try await asset.loadTracks(withMediaType: .audio).first,
+            let duration = try await asset.load(.duration)
+            // An empty track (e.g. the app played nothing) makes the whole export fail, so skip it.
+            guard duration > .zero,
+                  let source = try await asset.loadTracks(withMediaType: .audio).first,
                   let track = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
             else { continue }
-            try track.insertTimeRange(CMTimeRange(start: .zero, duration: try await asset.load(.duration)), of: source, at: .zero)
+            try track.insertTimeRange(CMTimeRange(start: .zero, duration: duration), of: source, at: .zero)
+        }
+        guard !composition.tracks.isEmpty else {
+            throw NSError(domain: "AudioRecorder", code: 1, userInfo: [NSLocalizedDescriptionKey: "no audio was captured"])
         }
         guard let export = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetAppleM4A) else {
             throw CocoaError(.fileWriteUnknown)
